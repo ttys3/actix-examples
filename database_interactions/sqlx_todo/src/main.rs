@@ -4,9 +4,10 @@ extern crate log;
 use std::env;
 
 use actix_web::{middleware, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::web::Data;
 use anyhow::Result;
 use dotenv::dotenv;
-use sqlx::SqlitePool;
+use sqlx::MySqlPool;
 
 // import todo module (routes and model)
 mod todo;
@@ -39,8 +40,8 @@ async fn main() -> Result<()> {
         .parse::<u16>()
         .expect("PORT should be a u16");
 
-    info!("using sqlite database at: {}", &database_url);
-    let db_pool = SqlitePool::new(&database_url).await?;
+    info!("using mysql database at: {}", &database_url);
+    let db_pool = MySqlPool::new(&database_url).await?;
 
     // startup connection+schema check
     sqlx::query!("SELECT * FROM todos")
@@ -51,7 +52,7 @@ async fn main() -> Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             // pass database pool to application so we can access it inside handlers
-            .data(db_pool.clone())
+            .app_data(Data::new(db_pool.clone()))
             .wrap(middleware::Logger::default())
             .route("/", web::get().to(index))
             .configure(todo::init) // init todo routes

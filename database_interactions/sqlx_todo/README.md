@@ -1,13 +1,13 @@
 # actix-sqlx-todo
 
-Example Todo application using Actix-web and [SQLx](https://github.com/launchbadge/sqlx) with sqlite
+Example Todo application using Actix-web and [SQLx](https://github.com/launchbadge/sqlx) with mysql
 
 # Usage
 
 ## Prerequisites
 
 * Rust
-* SQLite
+* MySQL
 
 ## Change into the project sub-directory
 
@@ -20,11 +20,12 @@ $ cd database_interactions/sqlx_todo
 ## Set up the database
 
 * Create new database using `schema.sql`
-* Copy `.env.example` into `.env` and adjust `DATABASE_URL` to match your SQLite address, if needed
+* Copy `.env.example` into `.env` and adjust `DATABASE_URL` to match your MySQL address, if needed
 
 ```sh
-cat schema.sql | sqlite3 test.db
 cp .env.example .env
+# log into mysql cli, and create the schema
+source schema.sql
 ```
 
 ## Run the application

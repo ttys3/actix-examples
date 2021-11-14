@@ -1,8 +1,8 @@
-use actix_web::{Error, HttpRequest, HttpResponse, Responder};
+use actix_web::{HttpRequest, HttpResponse, Responder};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqliteRow;
-use sqlx::{FromRow, Row, SqlitePool};
+use sqlx::mysql::MySqlRow;
+use sqlx::{FromRow, Row, MySqlPool};
 
 // this struct will use to receive user input
 #[derive(Serialize, Deserialize)]
@@ -16,15 +16,13 @@ pub struct TodoRequest {
 pub struct Todo {
     pub id: i32,
     pub description: String,
-    pub done: bool,
+    pub done: i8,
 }
 
 // implementation of Actix Responder for Todo struct so we can return Todo from action handler
 impl Responder for Todo {
-    type Error = Error;
-    type Future = HttpResponse;
 
-    fn respond_to(self, _req: &HttpRequest) -> Self::Future {
+    fn respond_to(self, _req: &HttpRequest) -> HttpResponse {
         // create response and set content type
         HttpResponse::Ok().json(&self)
     }
@@ -32,7 +30,7 @@ impl Responder for Todo {
 
 // Implementation for Todo struct, functions for read/write/update and delete todo from database
 impl Todo {
-    pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Todo>> {
+    pub async fn find_all(pool: &MySqlPool) -> Result<Vec<Todo>> {
         let todos = sqlx::query!(
             r#"
             SELECT id, description, done
@@ -53,12 +51,12 @@ impl Todo {
         Ok(todos)
     }
 
-    pub async fn find_by_id(id: i32, pool: &SqlitePool) -> Result<Option<Todo>> {
+    pub async fn find_by_id(id: i32, pool: &MySqlPool) -> Result<Option<Todo>> {
         let rec = sqlx::query!(
             r#"
             SELECT id, description, done
             FROM todos
-            WHERE id = $1
+            WHERE id = ?
             "#,
             id
         )
@@ -72,13 +70,16 @@ impl Todo {
         }))
     }
 
-    pub async fn create(todo: TodoRequest, pool: &SqlitePool) -> Result<Todo> {
+    pub async fn create(todo: TodoRequest, pool: &MySqlPool) -> Result<Todo> {
         let mut tx = pool.begin().await?;
 
+        // error creating todo: Field 'id' doesn't have a default value
+        // id          int                  not null
+        // fixup: alter table todos modify id int auto_increment;
         sqlx::query!(
             r#"
             INSERT INTO todos (description, done)
-            VALUES ($1, $2)
+            VALUES (?, ?)
             "#,
             todo.description,
             todo.done,
@@ -86,9 +87,13 @@ impl Todo {
         .execute(&mut tx)
         .await?;
 
-        // TODO: this can be replaced with RETURNING with sqlite v3.35+ and/or sqlx v0.5+
-        let row_id: i32 = sqlx::query("SELECT last_insert_rowid()")
-            .map(|row: SqliteRow| row.get(0))
+        // mysql: error creating todo: FUNCTION db001.last_insert_rowid does not exist
+
+        // value: Decode("mismatched types; Rust type `i32` (as SQL type INT) is not compatible with SQL type BIGINT UNSIGNED")'
+        // according to https://docs.rs/sqlx/0.5.9/sqlx/mysql/types/index.html
+        // BIGINT UNSIGNED is mapped to rust u64
+        let row_id: u64 = sqlx::query("SELECT LAST_INSERT_ID()")
+            .map(|row: MySqlRow| row.get(0))
             .fetch_one(&mut tx)
             .await?;
 
@@ -96,7 +101,7 @@ impl Todo {
             r#"
             SELECT id, description, done
             FROM todos
-            WHERE id = $1
+            WHERE id = ?
             "#,
             row_id,
         )
@@ -115,15 +120,15 @@ impl Todo {
     pub async fn update(
         id: i32,
         todo: TodoRequest,
-        pool: &SqlitePool,
+        pool: &MySqlPool,
     ) -> Result<Option<Todo>> {
         let mut tx = pool.begin().await.unwrap();
 
         let n = sqlx::query!(
             r#"
             UPDATE todos
-            SET description = $1, done = $2
-            WHERE id = $3
+            SET description = ?, done = ?
+            WHERE id = ?
             "#,
             todo.description,
             todo.done,
@@ -141,7 +146,7 @@ impl Todo {
             r#"
             SELECT id, description, done
             FROM todos
-            WHERE id = $1
+            WHERE id = ?
             "#,
             id,
         )
@@ -157,13 +162,13 @@ impl Todo {
         Ok(Some(todo))
     }
 
-    pub async fn delete(id: i32, pool: &SqlitePool) -> Result<u64> {
+    pub async fn delete(id: i32, pool: &MySqlPool) -> Result<u64> {
         let mut tx = pool.begin().await?;
 
         let n_deleted = sqlx::query!(
             r#"
             DELETE FROM todos
-            WHERE id = $1
+            WHERE id = ?
             "#,
             id,
         )
